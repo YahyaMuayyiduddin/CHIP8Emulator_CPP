@@ -1,16 +1,17 @@
 #include <iostream>
+#include <exception>
 
 using namespace std;
 
-
+using Byte = unsigned char;
+using Short = unsigned short;using Short = unsigned short;
 
 struct Chip8{
-    using Byte = unsigned char;
-    using Short = unsigned short;
+    
 
     Short PC;
     Byte SP;
-    Byte I;
+    Short I;
 
     Byte V0;
     Byte V1;
@@ -30,7 +31,11 @@ struct Chip8{
     Byte VF;
 };
 
-
+/**
+ * A call stack implementation for the CHIP 8, implemented using an array.
+ * 
+ * 
+ */
 class CHIP8_Stack{
 
     using Byte = unsigned short;
@@ -53,15 +58,29 @@ class CHIP8_Stack{
     };
 
     void push(Byte byte){
-        *(internal_array + top) = byte;
-        top++;
+        if(!is_full()){
+            *(internal_array + top) = byte;
+            top++;
+        }
+        
     };
 
     Byte& pop(){
-        top --;
-        return *(internal_array+(top));;
-        
+        if(!is_empty()){
+             top --;
+            return *(internal_array+(top));;
+
+        }
     };
+
+    bool is_full(){
+        return top == max_length;
+
+    };
+
+    bool is_empty(){
+        return top == 0;
+    }
 
 };
 
@@ -98,7 +117,68 @@ class Memory{
 
 };
 
+// 00E0 (clear screen)
+// 1NNN (jump)
+// 6XNN (set register VX)
+// 7XNN (add value to register VX)
+// ANNN (set index register I)
+// DXYN (display/draw)
+
+class Program{
+
+    public:
+    Chip8* cpu;
+    CHIP8_Stack* stack;
+    Memory* ram;
+
+
+    Program(){
+
+        cpu = new Chip8;
+        stack = new CHIP8_Stack(16);
+        ram = new Memory;
+
+
+    }
+    
+
+    /**
+     * Opcode 1NNN
+     * Sets PC to NNN
+     * 
+     * @param NNN A 12 bit memory address to jump to
+     */
+    void jump(Short NNN){
+        cpu->PC = NNN;
+    }
+
+    /**
+     * Opcode ANNN
+     * Sets I register to NNN
+     * 
+     * @param NNN A 12 bit memory address to store
+     */
+    void set_index(Short NNN){
+        cpu->I = NNN;
+
+    }
+
+
+
+
+
+
+
+
+};
+
 int main(){
+
+    Program program;
+    program.set_index(0xF0);
+    std::cout << program.cpu->I;
+
+
 
   
 
