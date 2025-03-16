@@ -366,7 +366,9 @@ void decode_and_execute(Byte first_byte, Byte second_byte, Display &display, Mem
         std::cout <<"Opcode: "<< (unsigned int)first_byte << (unsigned int)second_byte << endl;
         break;
         ;
-    case 0x2:;
+    case 0x2:
+        call(first_byte,second_byte,Chip8);
+        break;
     case 0x3:;
     case 0x4:;
     case 0x5:;
@@ -414,10 +416,7 @@ int main(int argc, char *argv[])
 
     std::array<Byte, 2> instructions;
 
-    call(0x2F,0xFF, chip8);
-    std::cout << (unsigned int)chip8.PC << endl;
-    ret(0x00,0xEE, chip8);
-    std::cout << (unsigned int)chip8.PC << endl;
+   
     
     
     while (running)
