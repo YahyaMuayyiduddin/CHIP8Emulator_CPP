@@ -5,6 +5,9 @@
             "label": "C/C++: clang++ build active file",
             "command": "/usr/bin/clang++",
             "args": [
+                "-F", "${workspaceFolder}/libs",
+                "-framework", "SDL3",
+                "-I", "${workspaceFolder}/libs/SDL3.framework/Headers",
                 "-fcolor-diagnostics",
                 "-fansi-escape-codes",
                 "-g",
