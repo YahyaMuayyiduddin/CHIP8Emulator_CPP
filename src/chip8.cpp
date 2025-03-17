@@ -12,7 +12,9 @@
 #include <exception>
 #include <chrono>
 #include <thread>
+#include <random>
 // #include "instructions.h"
+
 
 using namespace std;
 
@@ -78,6 +80,7 @@ struct Chip8
     Short PC;
     Call_Stack SP{16};
     Short I;
+    Byte delay_t;
 
     Byte V0;
     Byte V1;
@@ -274,12 +277,24 @@ Byte extract_bit(Byte byte, int position)
  *
  */
 
+ /**
+  * 
+  * 00E0
+  * Clears the screen
+  * @param display 
+  * 
+  */
 void clear_screen(Display &display)
 {
     SDL_SetRenderDrawColor(display.renderer, 0, 0, 0, 255);
     SDL_RenderClear(display.renderer);
 }
 
+/**
+ * 1NNN
+ * Sets PC to NNN
+ * 
+ */
 void jump(Byte first_byte, Byte second_byte, Chip8 &Chip8)
 {
     unsigned int first_N = extract_sec4bits(first_byte);
@@ -287,6 +302,12 @@ void jump(Byte first_byte, Byte second_byte, Chip8 &Chip8)
     Chip8.PC = NNN;
 }
 
+/**
+ * 
+ * 2NNN
+ * Pushes current PC to the stack, and sets PC to NNN
+ * 
+ */
 void call(Byte first_byte, Byte second_byte, Chip8 &Chip8){
     Chip8.SP.push(Chip8.PC);
     unsigned int first_N = extract_sec4bits(first_byte);
@@ -295,24 +316,105 @@ void call(Byte first_byte, Byte second_byte, Chip8 &Chip8){
 
 }
 
+/**
+ * 
+ * 00EE
+ * Pops the memory address stored on the stack, and sets the PC to that address
+ * 
+ * 
+ */
 void ret(Byte first_byte, Byte second_byte, Chip8 &Chip8){
     Short address = Chip8.SP.pop();
     Chip8.PC = address;
 
 }
 
+/**
+ * 
+ * 3XNN
+ * Skips the next instruction if the value at VX == NN
+ * 
+ */
+void skip_equal_vx_b(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int reg = extract_sec4bits(first_byte);
+    if(Chip8.reg_tabl.at(reg) == second_byte){
+        Chip8.PC += 2;
+    }
+}
+
+/**
+ * 
+ * 4XNN
+ * Skips the next instruction if the value at VX != NN
+ * 
+ */
+void skip_nequal_vx_b(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int reg = extract_sec4bits(first_byte);
+    if(Chip8.reg_tabl.at(reg) != second_byte){
+        Chip8.PC += 2;
+    }
+}
+
+/**
+ * 
+ * 5XY0
+ * Skips the next instruction if the value at VX == value at VY
+ * 
+ */
+void skip_equal_vx_vy(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int reg1 = extract_sec4bits(first_byte);
+    unsigned int reg2 = extract_first4bits(second_byte);
+    if(Chip8.reg_tabl.at(reg1) == Chip8.reg_tabl.at(reg2)){
+        Chip8.PC += 2;
+    }
+
+}
+
+/**
+ * 
+ * 9XY0
+ * Skips the next instruction if the value at VX != value at VY
+ * 
+ */
+void skip_nequal_vx_vy(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int reg1 = extract_sec4bits(first_byte);
+    unsigned int reg2 = extract_first4bits(second_byte);
+    if(Chip8.reg_tabl.at(reg1) != Chip8.reg_tabl.at(reg2)){
+        Chip8.PC += 2;
+    }
+}
+
+/**
+ * 
+ * 6XNN
+ * Sets register VX to NN
+ * 
+ */
 void set_register(Byte first_byte, Byte second_byte, Chip8 &Chip8)
 {
     unsigned int reg = extract_sec4bits(first_byte);
     Chip8.reg_tabl.at(reg) = second_byte;
 }
 
+/**
+ * 
+ * 7XNN
+ * Adds NN to register VX
+ * 
+ */
 void add_val_to_reg(Byte first_byte, Byte second_byte, Chip8 &Chip8)
 {
     unsigned int reg = extract_sec4bits(first_byte);
     Chip8.reg_tabl.at(reg) += second_byte;
 }
 
+
+/**
+ * 
+ * ANNN
+ * Sets I register to NNN
+ * 
+ */
 void set_index(Byte first_byte, Byte second_byte, Chip8 &Chip8)
 {
     unsigned int first_N = extract_sec4bits(first_byte);
@@ -320,6 +422,112 @@ void set_index(Byte first_byte, Byte second_byte, Chip8 &Chip8)
     Chip8.I = NNN;
 }
 
+void set(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    unsigned int y_reg = extract_first4bits(second_byte);
+    Chip8.reg_tabl.at(x_reg) = Chip8.reg_tabl.at(y_reg);
+
+}
+
+void bitw_or(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    unsigned int y_reg = extract_first4bits(second_byte);
+    Chip8.reg_tabl.at(x_reg) = Chip8.reg_tabl.at(y_reg) | Chip8.reg_tabl.at(x_reg);
+}
+
+void bitw_and(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    unsigned int y_reg = extract_first4bits(second_byte);
+    Chip8.reg_tabl.at(x_reg) = Chip8.reg_tabl.at(y_reg) & Chip8.reg_tabl.at(x_reg);
+}
+
+void bitw_xor(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    unsigned int y_reg = extract_first4bits(second_byte);
+    Chip8.reg_tabl.at(x_reg) = Chip8.reg_tabl.at(y_reg) ^ Chip8.reg_tabl.at(x_reg);
+}
+void bit_add(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    unsigned int y_reg = extract_first4bits(second_byte);
+    int overflowed_result = Chip8.reg_tabl.at(y_reg) + Chip8.reg_tabl.at(x_reg);
+    Byte result = Chip8.reg_tabl.at(y_reg) + Chip8.reg_tabl.at(x_reg);
+    if (overflowed_result > 0xFF){
+        Chip8.VF = 0x01;
+    }else{
+        Chip8.VF = 0x00;
+    }
+    Chip8.reg_tabl.at(x_reg) = result;
+}
+
+void bit_sub(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    unsigned int y_reg = extract_first4bits(second_byte);
+    if (Chip8.reg_tabl.at(x_reg) > Chip8.reg_tabl.at(y_reg)){
+        Chip8.VF = 0x01;
+    }else{
+        Chip8.VF = 0x00;
+    }
+    Byte result = Chip8.reg_tabl.at(x_reg) - Chip8.reg_tabl.at(y_reg);
+    
+    Chip8.reg_tabl.at(x_reg) = result;
+}
+
+void bit_subn(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    unsigned int y_reg = extract_first4bits(second_byte);
+    if (Chip8.reg_tabl.at(y_reg) > Chip8.reg_tabl.at(x_reg)){
+        Chip8.VF = 0x01;
+    }else{
+        Chip8.VF = 0x00;
+    }
+    Byte result = Chip8.reg_tabl.at(y_reg) - Chip8.reg_tabl.at(x_reg);
+    
+    Chip8.reg_tabl.at(x_reg) = result;
+}
+
+void bit_shiftr(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    unsigned int y_reg = extract_first4bits(second_byte);
+    Chip8.reg_tabl.at(x_reg) = Chip8.reg_tabl.at(y_reg);
+    if (Chip8.reg_tabl.at(x_reg) & 1){
+        Chip8.VF = 1;
+    }else{
+        Chip8.VF = 0;
+    }    
+    Chip8.reg_tabl.at(x_reg) = Chip8.reg_tabl.at(x_reg)>> 1;
+}
+
+void bit_shiftl(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    unsigned int y_reg = extract_first4bits(second_byte);
+    Chip8.reg_tabl.at(x_reg) = Chip8.reg_tabl.at(y_reg);
+    if (extract_bit(Chip8.reg_tabl.at(x_reg), 8)){
+        Chip8.VF = 1;
+    }else{
+        Chip8.VF = 0;
+    }    
+    Chip8.reg_tabl.at(x_reg) = Chip8.reg_tabl.at(x_reg) << 1;
+}
+
+void random_nn(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int x_reg = extract_sec4bits(first_byte);
+    Chip8.reg_tabl.at(x_reg) = ((rand() % 255) & second_byte) ;
+    std::cout << "random" << endl;
+
+}
+
+void jump_offset(Byte first_byte, Byte second_byte, Chip8 &Chip8){
+    unsigned int first_N = extract_sec4bits(first_byte);
+    Short NNN = first_N << 8 | second_byte;
+    Chip8.PC = NNN + Chip8.reg_tabl.at(0x00);
+}
+
+/**
+ * 
+ * DXYN 
+ * Displays an N pixel tall sprite stored at the I register. Paints the sprite at position X, Y stored at register VX, VY respectively.
+ * 
+ */
 void display_sprite2(Byte first_byte, Byte second_byte, Display &display, Chip8 &chip, Memory &memory)
 {
     unsigned int x_reg = extract_sec4bits(first_byte);
@@ -342,6 +550,11 @@ void display_sprite2(Byte first_byte, Byte second_byte, Display &display, Chip8 
     SDL_RenderPresent(display.renderer);
 }
 
+/**
+ * 
+ * Fetches the instruction stored at PC register. Instructions come in 2 bytes.
+ * 
+ */
 std::array<Byte, 2> fetch(Memory &memory, Chip8 &Chip)
 {
     std::array<Byte, 2> instruction;
@@ -352,14 +565,54 @@ std::array<Byte, 2> fetch(Memory &memory, Chip8 &Chip)
     return instruction;
 }
 
+void decode_8(Byte first_byte, Byte second_byte, Display &display, Memory &memory, Chip8 &Chip8){
+    unsigned int fourth_nibble = extract_sec4bits(second_byte);
+    switch (fourth_nibble){
+        case 0x00:
+            set(first_byte, second_byte, Chip8);
+            break;
+        case 0x01:
+            bitw_or(first_byte,second_byte, Chip8);
+            break;
+        case 0x02:
+            bitw_and(first_byte,second_byte, Chip8);
+            break;
+        case 0x03:
+            bitw_xor(first_byte, second_byte, Chip8);
+            break;
+        case 0x04:
+            bit_add(first_byte, second_byte, Chip8);
+            break;
+        case 0x05:
+            bit_sub(first_byte,second_byte, Chip8);
+            break;
+        case 0x06:
+            bit_shiftr(first_byte,second_byte, Chip8);
+            break;
+        case 0x07:
+            bit_subn(first_byte, second_byte, Chip8);
+            break;
+        case 0x0E:
+            bit_shiftl(first_byte, second_byte, Chip8);
+            break;
+        
+    }
+
+}
+
+
 void decode_and_execute(Byte first_byte, Byte second_byte, Display &display, Memory &memory, Chip8 &Chip8)
 {
     unsigned int first_nibble = extract_first4bits(first_byte);
     switch (first_nibble)
     {
     case 0x0:
+        if(extract_sec4bits(second_byte) == 0x0){
         std::cout <<"Opcode: "<< (unsigned int)first_byte << (unsigned int)second_byte << endl;
         clear_screen(display);
+        }else{
+            ret(first_byte, second_byte, Chip8);
+        }
         break;
     case 0x1:
         jump(first_byte, second_byte, Chip8);
@@ -369,9 +622,15 @@ void decode_and_execute(Byte first_byte, Byte second_byte, Display &display, Mem
     case 0x2:
         call(first_byte,second_byte,Chip8);
         break;
-    case 0x3:;
-    case 0x4:;
-    case 0x5:;
+    case 0x3:
+        skip_equal_vx_b(first_byte, second_byte, Chip8);
+        break;
+    case 0x4:
+        skip_nequal_vx_b(first_byte, second_byte, Chip8);
+        break;
+    case 0x5:
+        skip_equal_vx_vy(first_byte, second_byte, Chip8);
+        break;
     case 0x6:
         set_register(first_byte, second_byte, Chip8);
         std::cout <<"Opcode: "<< (unsigned int)first_byte << (unsigned int)second_byte << endl;
@@ -380,24 +639,36 @@ void decode_and_execute(Byte first_byte, Byte second_byte, Display &display, Mem
         add_val_to_reg(first_byte, second_byte, Chip8);
         std::cout <<"Opcode: "<< (unsigned int)first_byte << (unsigned int)second_byte << endl;
         break;
-    case 0x8:;
-    case 0x9:;
+    case 0x8:
+        decode_8(first_byte,second_byte,display, memory, Chip8);
+        break;
+    case 0x9:
+        skip_nequal_vx_vy(first_byte, second_byte, Chip8);
+        break;
     case 0xA:
         set_index(first_byte, second_byte, Chip8);
         std::cout <<"Opcode: "<< (unsigned int)first_byte << (unsigned int)second_byte << endl;
         break;
         ;
-    case 0xB:;
-    case 0xC:;
+    case 0xB:
+        jump_offset(first_byte,second_byte, Chip8);
+        break;
+    case 0xC:
+        random_nn(first_byte, second_byte, Chip8);
+        break;
     case 0xD:
         display_sprite2(first_byte, second_byte, display, Chip8, memory);
         // display_sprite2(first_byte, second_byte, display, Chip8, memory);
         std::cout <<"Opcode: "<< (unsigned int)first_byte << (unsigned int)second_byte << endl;
         break;
-    case 0xE:;
+    case 0xE:
+        break;
     case 0xF:
+        break;
     }
 }
+
+
 
 int main(int argc, char *argv[])
 {
@@ -412,16 +683,24 @@ int main(int argc, char *argv[])
     SDL_Init(SDL_INIT_VIDEO);
     chip8.PC = 0x200;
 
-    bool running = false;
+    bool running = true;
 
     std::array<Byte, 2> instructions;
 
-   
+//    test area
     
-    
+    // chip8.V0 = 0xF0;
+    // chip8.V1 = 0x20;
+    // bit_shiftr(0x80, 0x10, chip8);
+    // std::cout << (unsigned int)chip8.V1 << endl;
+    // decode_and_execute(0xC1, 0xFF, display, memory, chip8);
+    // std::cout << (unsigned int)chip8.V1 << endl;
+    // std::cout << (unsigned int)chip8.VF << endl;
+
+//    --------
     while (running)
     {
-        instructions = fetch(memory, chip8);
+        // instructions = fetch(memory, chip8);
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
@@ -429,10 +708,15 @@ int main(int argc, char *argv[])
             {
                 running = false;
             }
+            else if (event.type == SDL_EVENT_KEY_DOWN){
+                if (event.key.key == SDLK_Q){
+                    std::cout << "Q"<<endl;
+                }
+            }
         }
         // instructions = fetch(memory, chip8);
-        decode_and_execute(instructions[0], instructions[1], display, memory, chip8);
-        // std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        // decode_and_execute(instructions[0], instructions[1], display, memory, chip8);
+        // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         // decode_and_execute(0xDF, 0xAF, display, memory, chip8, call_stack);
 
         // display_sprite_test(5, display, chip8, memory);
@@ -440,6 +724,10 @@ int main(int argc, char *argv[])
 
     return 0;
 };
+
+
+
+
 
 // void display_sprite_test(int height, Display &display, Chip8 &chip, Memory &memory)
 // {
