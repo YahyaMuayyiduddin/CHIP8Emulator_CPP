@@ -13,6 +13,7 @@
 #include <chrono>
 #include <thread>
 #include <random>
+#include <time.h>
 // #include "instructions.h"
 
 
@@ -21,6 +22,26 @@ using namespace std;
 using bait = uint8_t;
 using Byte = unsigned char;
 using Short = unsigned short;
+
+/**
+ * 
+ * Chip-8 Keyboard
+ * 1234     123C
+ * QWER --->456D
+ * ASDF     789E
+ * ZXCV     A0BF
+ * 
+ */
+std::unordered_map<SDL_Keycode, Byte > keyboard = {
+    {SDLK_1, 0x01}, {SDLK_2, 0x02}, {SDLK_3, 0x03}, {SDLK_4, 0x0C},
+    {SDLK_Q, 0x04}, {SDLK_W, 0x05}, {SDLK_E, 0x06}, {SDLK_R, 0x0D},
+    {SDLK_A, 0x07}, {SDLK_S, 0x08}, {SDLK_D, 0x09}, {SDLK_F, 0x0E},
+    {SDLK_Z, 0x0A}, {SDLK_X, 0x00}, {SDLK_C, 0x0B}, {SDLK_V, 0x0F}
+};
+std::unordered_map<SDL_Keycode, Byte > font_address = {
+
+};
+
 
 /**
  * A call stack implementation for the CHIP 8, implemented using an array.
@@ -81,6 +102,7 @@ struct Chip8
     Call_Stack SP{16};
     Short I;
     Byte delay_t;
+    Byte sound_t;
 
     Byte V0;
     Byte V1;
@@ -145,7 +167,7 @@ public:
 
     Display()
     {
-        window = SDL_CreateWindow("Chip 8", 64, 32, SDL_WINDOW_OPENGL);
+        window = SDL_CreateWindow("Chip 8", 640, 320, SDL_WINDOW_OPENGL);
         renderer = SDL_CreateRenderer(window, NULL);
         // std::cout << renderer << "renderer" << endl;
         // std::cout << window << "window" << endl;
@@ -215,18 +237,24 @@ void load_fonts(Memory &memory)
         0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
         0xF0, 0x80, 0xF0, 0x80, 0x80  // F
     };
+    int font_count = 0;
     for (int i = 0; i < 80; i++)
     {
         memory.write(fonts[i], 0x050 + i);
+        if (i % 5 == 0){
+            font_address[0x00 + font_count] = 0x050 + i;
+            font_count++;
+        }
         // std::cout << (unsigned int)memory.read(0x050+i) << endl;
     }
 };
 
 void load_program(Memory &memory, string filename)
 {
-    std::fstream file("/Users/yahya/Documents/CPP/CHIP8Emulator_CPP/src/IBM Logo.ch8", ios::in | std::ios::binary | ios::ate);
+    // IBM Logo.ch8
+    std::fstream file("/Users/yahya/Documents/CPP/CHIP8Emulator_CPP/src/corax.ch8", ios::in | std::ios::binary | ios::ate);
     streampos size;
-    std::filesystem::path path = "/Users/yahya/Documents/CPP/CHIP8Emulator_CPP/src/IBM Logo.ch8";
+    std::filesystem::path path = "/Users/yahya/Documents/CPP/CHIP8Emulator_CPP/src/corax.ch8";
     int test;
     test = std::filesystem::file_size(path);
 
@@ -522,6 +550,157 @@ void jump_offset(Byte first_byte, Byte second_byte, Chip8 &Chip8){
     Chip8.PC = NNN + Chip8.reg_tabl.at(0x00);
 }
 
+void skip_key(Byte first_byte, Chip8 &chip){
+    SDL_Event event;
+    SDL_PollEvent(&event);
+    if(event.type == SDL_EVENT_KEY_DOWN){
+        if(keyboard.find(event.key.key) != keyboard.end()){
+            unsigned int vx = extract_sec4bits(first_byte);
+            if (keyboard.at(event.key.key) == chip.reg_tabl.at(vx)){
+                chip.PC += 2;
+            }
+
+        }
+
+    }
+  
+};
+
+void nskip_key(Byte first_byte, Chip8 &chip){
+    SDL_Event event;
+    SDL_PollEvent(&event);
+    if(event.type == SDL_EVENT_KEY_DOWN){
+        if(keyboard.find(event.key.key) != keyboard.end()){
+            unsigned int vx = extract_sec4bits(first_byte);
+            if (keyboard.at(event.key.key) == chip.reg_tabl.at(vx)){
+                return;
+            }
+
+        }
+
+    }
+  chip.PC += 2;
+};
+
+/**
+ * 
+ * FX07
+ * 
+ */
+void set_vx_delay(Byte first_byte, Chip8 &chip){
+    unsigned int vx = extract_sec4bits(first_byte);
+    chip.reg_tabl.at(vx) = chip.delay_t;
+
+}
+
+/**
+ * 
+ * FX15
+ * 
+ */
+void set_delay_vx(Byte first_byte, Chip8 &chip){
+    unsigned int vx = extract_sec4bits(first_byte);
+    chip.delay_t = chip.reg_tabl.at(vx);
+
+}
+
+
+/**
+ * 
+ * FX18
+ * 
+ */
+void set_sound_vx(Byte first_byte, Chip8 &chip){
+    unsigned int vx = extract_sec4bits(first_byte);
+    chip.sound_t = chip.reg_tabl.at(vx);
+
+}
+
+/**
+ * 
+ * FX1E
+ * 
+ */
+void add_index(Byte first_byte, Chip8 &chip8){
+    chip8.I += chip8.reg_tabl.at(extract_sec4bits(first_byte));
+}
+
+/**
+ * 
+ * FX0A
+ * 
+ */
+void get_key(Byte first_byte, Chip8 &chip8){
+    SDL_Event event;
+    SDL_PollEvent(&event);
+    unsigned int vx = extract_sec4bits(first_byte);
+    if (event.type == SDL_EVENT_KEY_DOWN){
+        if(keyboard.find(event.key.key) != keyboard.end()){
+            chip8.reg_tabl.at(vx) = keyboard.at(event.key.key);
+            return;
+        }
+    }
+    chip8.PC -=2;
+}
+
+
+/**
+ * 
+ * FX29
+ * 
+ */
+void set_font(Byte first_byte, Chip8 &chip8){
+    unsigned int vx = extract_sec4bits(first_byte);
+    chip8.I = font_address[chip8.reg_tabl.at(vx)];
+}
+
+
+/**
+ * 
+ * FX55
+ * 
+ */
+void store_memory(Byte first_byte, Memory& memory, Chip8 &chip8){
+    unsigned int reg_range = extract_sec4bits(first_byte);
+    for(int i = 0; i <= reg_range; i++){
+        memory.write(chip8.reg_tabl.at(i) ,chip8.I + i);
+    }
+
+}
+
+/**
+ * 
+ * FX65
+ * 
+ */
+void load_memory(Byte first_byte, Memory& memory, Chip8 &chip8){
+    unsigned int reg_range = extract_sec4bits(first_byte);
+    for(int i = 0; i <= reg_range; i++){
+        chip8.reg_tabl.at(i) = memory.read(chip8.I + i);
+    }
+
+}
+
+/**
+ * 
+ * FX33
+ * 
+ */
+void decimal_conversion(Byte first_byte, Memory& memory, Chip8 &chip8){
+    unsigned int vx = extract_sec4bits(first_byte);
+    unsigned int number = chip8.reg_tabl.at(vx);
+    for(int i = 0; i < 3; i++){
+        int power = i+1;
+        memory.write( (number % (int)pow(10,power))/int(pow(10,power-1)),chip8.I + 2-i);
+        number = number - (number % (int)pow(10,power));
+        
+    }
+    
+
+}
+
+
+
 /**
  * 
  * DXYN 
@@ -600,8 +779,41 @@ void decode_8(Byte first_byte, Byte second_byte, Display &display, Memory &memor
 
 }
 
+void decode_F(Byte first_byte, Byte second_byte, Display &display, Memory &memory, Chip8 &chip8){
+    switch((unsigned int)second_byte){
+        case 0x07:
+            set_vx_delay(first_byte, chip8);
+            break;
+        case 0x15:
+            set_delay_vx(first_byte,chip8);
+            break;
+        case 0x18:
+            set_sound_vx(first_byte, chip8);
+            break;
+        case 0x1E:
+            add_index(first_byte, chip8);
+            break;
+        case 0x0A:
+            get_key(first_byte, chip8);
+            break;
+        case 0x29:
+            set_font(first_byte, chip8);
+            break;
+        case 0x33:
+            decimal_conversion(first_byte, memory, chip8);
+            break;
+        case 0x55:
+            store_memory(first_byte, memory, chip8);
+            break;
+        case 0x65:
+            load_memory(first_byte, memory, chip8);
+            break;
+    }
 
-void decode_and_execute(Byte first_byte, Byte second_byte, Display &display, Memory &memory, Chip8 &Chip8)
+
+}
+
+void decode_and_execute(Byte first_byte, Byte second_byte, Display &display, Memory &memory, Chip8 &Chip8, SDL_Event event)
 {
     unsigned int first_nibble = extract_first4bits(first_byte);
     switch (first_nibble)
@@ -662,8 +874,14 @@ void decode_and_execute(Byte first_byte, Byte second_byte, Display &display, Mem
         std::cout <<"Opcode: "<< (unsigned int)first_byte << (unsigned int)second_byte << endl;
         break;
     case 0xE:
+        if ((unsigned int)second_byte == 0x9E){
+            skip_key(first_byte, Chip8);
+        }else{
+            nskip_key(first_byte, Chip8);
+        }
         break;
     case 0xF:
+        decode_F(first_byte, second_byte, display, memory, Chip8);
         break;
     }
 }
@@ -684,11 +902,14 @@ int main(int argc, char *argv[])
     chip8.PC = 0x200;
 
     bool running = true;
-
+    
+    
     std::array<Byte, 2> instructions;
+    std::clock_t start = clock();
 
 //    test area
-    
+    // chip8.delay_t = 0xff;
+
     // chip8.V0 = 0xF0;
     // chip8.V1 = 0x20;
     // bit_shiftr(0x80, 0x10, chip8);
@@ -697,29 +918,95 @@ int main(int argc, char *argv[])
     // std::cout << (unsigned int)chip8.V1 << endl;
     // std::cout << (unsigned int)chip8.VF << endl;
 
+    // chip8.VA = 0x0F;
+    // set_font(0x0A, chip8);
+    // std::cout << (unsigned int)chip8.I << endl;
+    // std::cout << (unsigned int)memory.read(chip8.I) << endl;
+// ----------
+    // chip8.V0 = 0xF0;
+    // chip8.V1 = 0xF0;
+    // chip8.V2 = 0xF0;
+    // chip8.V3 = 0xF0;
+    // chip8.V4 = 0xF0;
+    // chip8.V5 = 0xF0;
+    // chip8.V6 = 0xF0;
+    // chip8.V7 = 0xF0;
+    // chip8.V8 = 0xF0;
+    // chip8.V9 = 0xF0;
+    // chip8.VA = 0xF0;
+    // chip8.VB = 0xF0;
+    // chip8.VC = 0xF0;
+    // chip8.VD = 0xF0;
+    // chip8.VE = 0xF0;
+    // chip8.VF = 0x0A;
+    // chip8.I = 0x200;
+    // store_memory(0x00, memory, chip8);
+    // for(int i = 0; i <= 0x0f;i++){
+    //     std::cout << (unsigned int)memory.read(chip8.I + i) << endl;
+    // }
+    // chip8.V0 = 0x00;
+    // chip8.V1 = 0x00;
+    // chip8.V2 = 0x00;
+    // chip8.V3 = 0x00;
+    // chip8.V4 = 0x00;
+    // chip8.V5 = 0x00;
+    // chip8.V6 = 0x00;
+    // chip8.V7 = 0x00;
+    // chip8.V8 = 0x00;
+    // chip8.V9 = 0x00;
+    // chip8.VA = 0x00;
+    // chip8.VB = 0x00;
+    // chip8.VC = 0x00;
+    // chip8.VD = 0x00;
+    // chip8.VE = 0x00;
+    // chip8.VF = 0x00;
+    // load_memory(0x00, memory, chip8);
+    // for(int i = 0; i <= 0x0f;i++){
+    //     std::cout << (unsigned int)chip8.reg_tabl.at(i) << endl;
+    // }
+// ---
+    // chip8.I = 0x200;
+    // chip8.V2 = 0xAA;
+    // decimal_conversion(0x02, memory, chip8);
+    // std::cout << (unsigned int)memory.read(chip8.I) << endl;
+    // std::cout << (unsigned int)memory.read(chip8.I + 1)  << endl;
+    // std::cout << (unsigned int)memory.read(chip8.I + 2)  << endl;
+
 //    --------
     while (running)
     {
         // instructions = fetch(memory, chip8);
         SDL_Event event;
+        
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_EVENT_QUIT)
-            {
+            {   
                 running = false;
             }
-            else if (event.type == SDL_EVENT_KEY_DOWN){
-                if (event.key.key == SDLK_Q){
-                    std::cout << "Q"<<endl;
-                }
+            
+        
+            
+        }
+        
+        // Delay timer decrement
+        if(chip8.delay_t > 0x00){
+            if((float)(clock()-start)/CLOCKS_PER_SEC >= 0.001){
+                chip8.delay_t -= (Byte)0x01;
+                std::cout << (unsigned int)chip8.delay_t << endl;
+                start = clock();
             }
         }
-        // instructions = fetch(memory, chip8);
-        // decode_and_execute(instructions[0], instructions[1], display, memory, chip8);
-        // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        // decode_and_execute(0xDF, 0xAF, display, memory, chip8, call_stack);
-
-        // display_sprite_test(5, display, chip8, memory);
+        //----------
+        // chip8.PC += 2;
+        // std::cout << (unsigned int)chip8.PC << endl;
+        // std::cout << (unsigned int)chip8.VA << endl;
+        // get_key(0x0a,chip8);
+        // ---------
+        // set_vx_delay(0x0A, chip8);
+        instructions = fetch(memory, chip8);
+        decode_and_execute(instructions[0], instructions[1], display, memory, chip8, event);
+      
     }
 
     return 0;
